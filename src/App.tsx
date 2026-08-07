@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   NavScreen,
   ProjectInfo,
@@ -16,11 +16,11 @@ import {
   INITIAL_SUGGESTIONS,
   INITIAL_BOTTLENECKS,
 } from './data/initialData';
+import { recalculateProjectMetrics } from './utils/projectMetrics';
 
 import { SideNavBar } from './components/SideNavBar';
 import { TopNavBar } from './components/TopNavBar';
 import { OptimizationDashboard } from './components/OptimizationDashboard';
-import { ResourceAllocation } from './components/ResourceAllocation';
 import { TaskBoard } from './components/TaskBoard';
 import { ResourceManagement } from './components/ResourceManagement';
 import { GanttChart } from './components/GanttChart';
@@ -34,7 +34,23 @@ import { SubscriptionPricing } from './components/SubscriptionPricing';
 export default function App() {
   const [currentScreen, setCurrentScreen] = useState<NavScreen>('optimization');
   const [projects, setProjects] = useState<ProjectInfo[]>([INITIAL_PROJECT, SECOND_PROJECT]);
-  const [activeProjectId, setActiveProjectId] = useState<string>(INITIAL_PROJECT.id);
+  const [activeProjectId, setActiveProjectId] = useState<string>(() => {
+    try {
+      const saved = localStorage.getItem('optiplan_active_project_id');
+      if (saved) return saved;
+    } catch (e) {
+      // fallback
+    }
+    return INITIAL_PROJECT.id;
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('optiplan_active_project_id', activeProjectId);
+    } catch (e) {
+      // fallback
+    }
+  }, [activeProjectId]);
 
   const activeProject = projects.find((p) => p.id === activeProjectId) || projects[0] || INITIAL_PROJECT;
 
@@ -273,6 +289,27 @@ export default function App() {
     }
   };
 
+  // Automatically recalculate project metrics, timeline, critical path, bottlenecks, and costs when tasks or resources change
+  const { recalculatedProject, recalculatedBottlenecks, criticalTaskCodes } = useMemo(() => {
+    const { updatedProject, updatedBottlenecks, criticalTaskCodes } = recalculateProjectMetrics(
+      activeProject,
+      tasks,
+      resources
+    );
+    return {
+      recalculatedProject: updatedProject,
+      recalculatedBottlenecks: updatedBottlenecks,
+      criticalTaskCodes,
+    };
+  }, [tasks, resources, activeProjectId]);
+
+  useEffect(() => {
+    setProjects((prev) =>
+      prev.map((p) => (p.id === activeProjectId ? { ...p, ...recalculatedProject } : p))
+    );
+    setBottlenecks(recalculatedBottlenecks);
+  }, [recalculatedProject, recalculatedBottlenecks, activeProjectId]);
+
   // Global search filtering across tasks & resources if search query exists
   const filteredTasksForSearch = searchQuery
     ? tasks.filter(
@@ -328,13 +365,16 @@ export default function App() {
                 onApplyOptimization={handleApplyOptimization}
                 onApplySuggestion={handleApplySuggestion}
                 onViewGantt={() => setCurrentScreen('gantt')}
-                onViewResourceAllocation={() => setCurrentScreen('resource-allocation')}
+                onViewResourceAllocation={() => setCurrentScreen('resource-management')}
               />
             )}
 
-            {currentScreen === 'resource-allocation' && (
-              <ResourceAllocation
+            {(currentScreen === 'resource-management' || currentScreen === 'resource-allocation') && (
+              <ResourceManagement
                 resources={filteredResourcesForSearch}
+                onUpdateMonthlyCost={handleUpdateResourceCost}
+                onAddResource={handleAddResource}
+                onDeleteResource={handleDeleteResource}
                 onUpdateResourceCapacity={handleUpdateResourceCapacity}
                 onBalanceWorkload={handleBalanceWorkload}
               />
@@ -376,16 +416,13 @@ export default function App() {
               </div>
             )}
 
-            {currentScreen === 'resource-management' && (
-              <ResourceManagement
-                resources={filteredResourcesForSearch}
-                onUpdateMonthlyCost={handleUpdateResourceCost}
-                onAddResource={handleAddResource}
-                onDeleteResource={handleDeleteResource}
+            {currentScreen === 'gantt' && (
+              <GanttChart
+                tasks={filteredTasksForSearch}
+                onUpdateTask={handleUpdateTask}
+                criticalTaskCodes={criticalTaskCodes}
               />
             )}
-
-            {currentScreen === 'gantt' && <GanttChart tasks={filteredTasksForSearch} />}
 
             {(currentScreen === 'settings' || currentScreen === 'discussions') && (
               <ProjectSettings

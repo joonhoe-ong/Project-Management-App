@@ -32,8 +32,7 @@ export const SideNavBar: React.FC<SideNavBarProps> = ({
     { id: 'optimization', label: 'Dashboard', icon: 'dashboard' },
     { id: 'gantt', label: 'Gantt Chart', icon: 'timeline' },
     { id: 'task-board', label: 'Task Board', icon: 'view_kanban' },
-    { id: 'resource-allocation', label: 'Resource Allocation', icon: 'group_work' },
-    { id: 'resource-management', label: 'Resource Management', icon: 'account_balance_wallet' },
+    { id: 'resource-management', label: 'Resource Management', icon: 'group_work' },
     { id: 'settings', label: 'Project Settings', icon: 'settings' },
   ];
 

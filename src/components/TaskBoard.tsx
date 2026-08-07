@@ -350,6 +350,36 @@ export const TaskBoard: React.FC<TaskBoardProps> = ({
                   </div>
                 </div>
 
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block font-semibold text-slate-500 uppercase text-[10px] mb-1">
+                      Start Date
+                    </label>
+                    <input
+                      type="date"
+                      value={editingTask.startDate || '2026-10-01'}
+                      onChange={(e) =>
+                        setEditingTask({ ...editingTask, startDate: e.target.value })
+                      }
+                      className="w-full bg-slate-50 border border-slate-300 rounded-md px-3 py-2 text-slate-800 text-xs focus:bg-white focus:outline-none font-mono"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block font-semibold text-slate-500 uppercase text-[10px] mb-1">
+                      End Date
+                    </label>
+                    <input
+                      type="date"
+                      value={editingTask.endDate || '2026-10-12'}
+                      onChange={(e) =>
+                        setEditingTask({ ...editingTask, endDate: e.target.value })
+                      }
+                      className="w-full bg-slate-50 border border-slate-300 rounded-md px-3 py-2 text-slate-800 text-xs focus:bg-white focus:outline-none font-mono"
+                    />
+                  </div>
+                </div>
+
                 <div>
                   <label className="block font-semibold text-slate-500 uppercase text-[10px] mb-1">
                     Assignee Name

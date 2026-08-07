@@ -6,6 +6,8 @@ interface ResourceManagementProps {
   onUpdateMonthlyCost: (resourceId: string, newCost: number) => void;
   onAddResource: (resource: Omit<Resource, 'id' | 'capacityAvg'>) => void;
   onDeleteResource: (resourceId: string) => void;
+  onUpdateResourceCapacity?: (resourceId: string, day: number, newCapacity: number) => void;
+  onBalanceWorkload?: () => void;
 }
 
 export const ResourceManagement: React.FC<ResourceManagementProps> = ({
@@ -13,20 +15,48 @@ export const ResourceManagement: React.FC<ResourceManagementProps> = ({
   onUpdateMonthlyCost,
   onAddResource,
   onDeleteResource,
+  onUpdateResourceCapacity,
+  onBalanceWorkload,
 }) => {
+  const [activeTab, setActiveTab] = useState<'roster' | 'heatmap' | 'projects'>('roster');
   const [showAddModal, setShowAddModal] = useState(false);
+  const [selectedDeptFilter, setSelectedDeptFilter] = useState<string>('All');
+  
+  // Add Resource Form State
   const [name, setName] = useState('');
   const [role, setRole] = useState('');
   const [department, setDepartment] = useState<'Engineering' | 'Design' | 'Management' | 'Marketing' | 'QA'>('Engineering');
   const [cost, setCost] = useState('10000');
 
-  const totalMonthlyCost = resources.reduce((acc, r) => acc + (r.monthlyCost || 0), 0);
+  // Heatmap editing state
+  const [editingCell, setEditingCell] = useState<{ resId: string; day: number } | null>(null);
+  const [tempValue, setTempValue] = useState<string>('');
 
-  // Calculate department cost breakdown percentages
+  const filteredResources = selectedDeptFilter === 'All'
+    ? resources
+    : resources.filter((r) => r.department === selectedDeptFilter);
+
+  const totalMonthlyCost = resources.reduce((acc, r) => acc + (r.monthlyCost || 0), 0);
+  const overallocatedCount = resources.filter((r) => r.capacityAvg > 100).length;
+  const availableCount = resources.filter((r) => r.capacityAvg < 85).length;
+
+  const totalWeeklyHours = resources.length * 40;
+  const allocatedWeeklyHours = resources.reduce(
+    (acc, r) => acc + Math.round((r.capacityAvg / 100) * 40),
+    0
+  );
+  const availableWeeklyHours = Math.max(0, totalWeeklyHours - allocatedWeeklyHours);
+  const avgUtilization = Math.round(
+    resources.reduce((acc, r) => acc + r.capacityAvg, 0) / (resources.length || 1)
+  );
+
+  // Department cost breakdown
   const deptCosts: Record<string, number> = {};
   resources.forEach((r) => {
     deptCosts[r.department] = (deptCosts[r.department] || 0) + r.monthlyCost;
   });
+
+  const days = Array.from({ length: 14 }, (_, i) => i + 1);
 
   const handleAddSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -52,38 +82,199 @@ export const ResourceManagement: React.FC<ResourceManagementProps> = ({
     setShowAddModal(false);
   };
 
+  const handleCellClick = (resId: string, day: number, currentVal: number) => {
+    setEditingCell({ resId, day });
+    setTempValue(String(currentVal || 0));
+  };
+
+  const handleSaveCell = () => {
+    if (editingCell && onUpdateResourceCapacity) {
+      const val = parseInt(tempValue, 10);
+      if (!isNaN(val) && val >= 0 && val <= 300) {
+        onUpdateResourceCapacity(editingCell.resId, editingCell.day, val);
+      }
+      setEditingCell(null);
+    }
+  };
+
   return (
     <div className="space-y-6">
       {/* Header Section */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
           <h2 className="text-2xl sm:text-3xl font-bold text-slate-900 tracking-tight">
-            Resource Management
+            Resource Management & Allocation
           </h2>
           <p className="text-xs sm:text-sm text-slate-500 mt-1">
-            Manage team allocations and track monthly manpower costs.
+            Track team availability, weekly capacity, workload distribution, and manpower budget.
           </p>
         </div>
 
-        <button
-          onClick={() => setShowAddModal(true)}
-          className="bg-blue-600 hover:bg-blue-700 text-white py-2 px-4 rounded-md font-semibold text-xs flex items-center shadow-xs transition-all active:scale-95"
-        >
-          <span className="material-symbols-outlined mr-1.5 text-[18px]">add</span>
-          Add Resource
-        </button>
+        <div className="flex items-center gap-2">
+          {onBalanceWorkload && (
+            <button
+              onClick={onBalanceWorkload}
+              className="bg-slate-800 hover:bg-slate-900 text-white py-2 px-3.5 rounded-md font-semibold text-xs flex items-center shadow-xs transition-all active:scale-95"
+            >
+              <span className="material-symbols-outlined mr-1.5 text-[16px] text-blue-400 animate-spin-slow">
+                auto_awesome
+              </span>
+              Balance Workload
+            </button>
+          )}
+
+          <button
+            onClick={() => setShowAddModal(true)}
+            className="bg-blue-600 hover:bg-blue-700 text-white py-2 px-4 rounded-md font-semibold text-xs flex items-center shadow-xs transition-all active:scale-95"
+          >
+            <span className="material-symbols-outlined mr-1.5 text-[18px]">add</span>
+            Add Resource
+          </button>
+        </div>
       </div>
 
-      {/* Bento Grid Layout */}
-      <div className="grid grid-cols-12 gap-4 sm:gap-6">
-        {/* Main Table Area (Left 8 Cols) */}
-        <div className="col-span-12 xl:col-span-8 bg-white border border-slate-200 rounded-xl shadow-xs flex flex-col overflow-hidden">
+      {/* Top Resource Stats Bar */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        {/* Total Monthly Cost */}
+        <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-xs flex items-center justify-between">
+          <div>
+            <span className="text-[10px] uppercase font-bold text-slate-500 tracking-wider">
+              Monthly Budget
+            </span>
+            <div className="text-2xl font-bold text-slate-900 mt-0.5">
+              ${totalMonthlyCost.toLocaleString()}
+            </div>
+            <span className="text-[10px] text-slate-400 font-medium">
+              {resources.length} Team Members
+            </span>
+          </div>
+          <div className="w-10 h-10 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center border border-blue-100">
+            <span className="material-symbols-outlined text-[22px]">account_balance_wallet</span>
+          </div>
+        </div>
+
+        {/* Total Availability */}
+        <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-xs flex items-center justify-between">
+          <div>
+            <span className="text-[10px] uppercase font-bold text-slate-500 tracking-wider">
+              Free Capacity
+            </span>
+            <div className="text-2xl font-bold text-emerald-600 mt-0.5">
+              {availableWeeklyHours} hrs<span className="text-xs font-normal text-slate-500"> /wk</span>
+            </div>
+            <span className="text-[10px] text-emerald-700 font-semibold">
+              {availableCount} member{availableCount !== 1 ? 's' : ''} available for tasks
+            </span>
+          </div>
+          <div className="w-10 h-10 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center border border-emerald-100">
+            <span className="material-symbols-outlined text-[22px]">person_add</span>
+          </div>
+        </div>
+
+        {/* Average Utilization */}
+        <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-xs flex items-center justify-between">
+          <div>
+            <span className="text-[10px] uppercase font-bold text-slate-500 tracking-wider">
+              Avg Utilization
+            </span>
+            <div className="text-2xl font-bold text-slate-900 mt-0.5">
+              {avgUtilization}%
+            </div>
+            <div className="w-24 bg-slate-100 h-1.5 mt-1.5 rounded-full overflow-hidden">
+              <div
+                className={`h-full ${avgUtilization > 100 ? 'bg-rose-500' : 'bg-blue-600'}`}
+                style={{ width: `${Math.min(avgUtilization, 100)}%` }}
+              />
+            </div>
+          </div>
+          <div className="w-10 h-10 rounded-lg bg-indigo-50 text-indigo-600 flex items-center justify-center border border-indigo-100">
+            <span className="material-symbols-outlined text-[22px]">speed</span>
+          </div>
+        </div>
+
+        {/* Overallocated Alert */}
+        <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-xs flex items-center justify-between">
+          <div>
+            <span className="text-[10px] uppercase font-bold text-slate-500 tracking-wider">
+              Workload Risk
+            </span>
+            <div className="text-2xl font-bold text-slate-900 mt-0.5">
+              {overallocatedCount} <span className="text-xs font-normal text-rose-600 font-semibold">Overloaded</span>
+            </div>
+            <span className="text-[10px] text-slate-400 font-medium">
+              {overallocatedCount > 0 ? 'Requires balancing' : 'Workload is balanced'}
+            </span>
+          </div>
+          <div className={`w-10 h-10 rounded-lg flex items-center justify-center border ${
+            overallocatedCount > 0 ? 'bg-rose-50 text-rose-600 border-rose-200' : 'bg-slate-50 text-slate-400 border-slate-200'
+          }`}>
+            <span className="material-symbols-outlined text-[22px]">warning</span>
+          </div>
+        </div>
+      </div>
+
+      {/* Navigation Tabs */}
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 border-b border-slate-200 pb-2">
+        <div className="flex gap-2">
+          <button
+            onClick={() => setActiveTab('roster')}
+            className={`px-3.5 py-1.5 rounded-md text-xs font-semibold transition-all flex items-center gap-1.5 ${
+              activeTab === 'roster'
+                ? 'bg-blue-600 text-white shadow-xs'
+                : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
+            }`}
+          >
+            <span className="material-symbols-outlined text-[16px]">group</span>
+            Team Availability & Roster
+          </button>
+          <button
+            onClick={() => setActiveTab('heatmap')}
+            className={`px-3.5 py-1.5 rounded-md text-xs font-semibold transition-all flex items-center gap-1.5 ${
+              activeTab === 'heatmap'
+                ? 'bg-blue-600 text-white shadow-xs'
+                : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
+            }`}
+          >
+            <span className="material-symbols-outlined text-[16px]">calendar_view_week</span>
+            Capacity & Daily Heatmap
+          </button>
+          <button
+            onClick={() => setActiveTab('projects')}
+            className={`px-3.5 py-1.5 rounded-md text-xs font-semibold transition-all flex items-center gap-1.5 ${
+              activeTab === 'projects'
+                ? 'bg-blue-600 text-white shadow-xs'
+                : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
+            }`}
+          >
+            <span className="material-symbols-outlined text-[16px]">pie_chart</span>
+            Dept & Project Distribution
+          </button>
+        </div>
+
+        {/* Filter */}
+        <select
+          value={selectedDeptFilter}
+          onChange={(e) => setSelectedDeptFilter(e.target.value)}
+          className="h-8 px-3 border border-slate-300 rounded-md bg-white text-slate-700 text-xs font-semibold focus:outline-none focus:ring-1 focus:ring-blue-500 cursor-pointer shadow-xs"
+        >
+          <option value="All">All Departments ({resources.length})</option>
+          <option value="Engineering">Engineering</option>
+          <option value="Design">Design</option>
+          <option value="Management">Management</option>
+          <option value="QA">QA</option>
+          <option value="Marketing">Marketing</option>
+        </select>
+      </div>
+
+      {/* TAB 1: TEAM AVAILABILITY & ROSTER TABLE */}
+      {activeTab === 'roster' && (
+        <div className="bg-white border border-slate-200 rounded-xl shadow-xs overflow-hidden flex flex-col">
           <div className="p-4 border-b border-slate-200 bg-slate-50/50 flex justify-between items-center">
-            <h3 className="font-bold text-xs text-slate-900 uppercase tracking-wider">
-              Active Team Members
+            <h3 className="font-bold text-xs text-slate-900 uppercase tracking-wider flex items-center gap-2">
+              <span>Resource Roster & Availability Status</span>
             </h3>
             <span className="text-[11px] font-semibold text-slate-500">
-              {resources.length} Members Listed
+              Showing {filteredResources.length} members
             </span>
           </div>
 
@@ -91,119 +282,271 @@ export const ResourceManagement: React.FC<ResourceManagementProps> = ({
             <table className="w-full text-left border-collapse">
               <thead>
                 <tr className="border-b border-slate-200 bg-white text-[11px] font-bold text-slate-500 uppercase tracking-wider">
-                  <th className="p-4">Resource</th>
-                  <th className="p-4">Role</th>
-                  <th className="p-4">Department</th>
+                  <th className="p-4">Resource Name</th>
+                  <th className="p-4">Role & Dept</th>
+                  <th className="p-4">Availability Status</th>
+                  <th className="p-4">Weekly Capacity</th>
                   <th className="p-4 text-right">Monthly Cost ($)</th>
                   <th className="p-4 text-center">Action</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 text-xs">
-                {resources.map((res) => (
-                  <tr
-                    key={res.id}
-                    className="hover:bg-slate-50/80 transition-colors group relative"
-                  >
-                    <td className="p-4">
-                      <div className="flex items-center">
-                        {res.avatar ? (
-                          <img
-                            src={res.avatar}
-                            alt={res.name}
-                            className="w-8 h-8 rounded-full object-cover mr-3 border border-slate-200"
-                          />
-                        ) : (
-                          <div className="w-8 h-8 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center font-bold text-xs mr-3 border border-blue-200">
-                            {res.initials}
+                {filteredResources.map((res) => {
+                  const allocatedHours = Math.round((res.capacityAvg / 100) * 40);
+                  const freeHours = Math.max(0, 40 - allocatedHours);
+
+                  let availBadge = {
+                    label: `Available (${freeHours} hrs free)`,
+                    bg: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+                    dot: 'bg-emerald-500',
+                  };
+
+                  if (res.capacityAvg > 100) {
+                    availBadge = {
+                      label: `Overallocated (${allocatedHours - 40} hrs over)`,
+                      bg: 'bg-rose-50 text-rose-700 border-rose-200',
+                      dot: 'bg-rose-500',
+                    };
+                  } else if (res.capacityAvg >= 85) {
+                    availBadge = {
+                      label: `At Capacity (40 hrs)`,
+                      bg: 'bg-amber-50 text-amber-800 border-amber-200',
+                      dot: 'bg-amber-500',
+                    };
+                  }
+
+                  return (
+                    <tr key={res.id} className="hover:bg-slate-50/80 transition-colors">
+                      <td className="p-4">
+                        <div className="flex items-center">
+                          {res.avatar ? (
+                            <img
+                              src={res.avatar}
+                              alt={res.name}
+                              className="w-8 h-8 rounded-full object-cover mr-3 border border-slate-200"
+                            />
+                          ) : (
+                            <div className="w-8 h-8 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center font-bold text-xs mr-3 border border-blue-200">
+                              {res.initials}
+                            </div>
+                          )}
+                          <div>
+                            <span className="font-bold text-slate-900 block">{res.name}</span>
+                            <span className="text-[10px] text-slate-400 font-mono">ID: {res.id}</span>
                           </div>
-                        )}
-                        <span className="font-bold text-slate-900">{res.name}</span>
-                      </div>
-                    </td>
+                        </div>
+                      </td>
 
-                    <td className="p-4 text-slate-600 font-medium">{res.role}</td>
+                      <td className="p-4">
+                        <div className="text-slate-800 font-medium">{res.role}</div>
+                        <span className="text-[10px] font-semibold text-slate-500 uppercase">
+                          {res.department}
+                        </span>
+                      </td>
 
-                    <td className="p-4">
-                      <span
-                        className={`inline-flex items-center px-2.5 py-1 rounded-full font-mono text-[10px] font-semibold ${
-                          res.department === 'Engineering'
-                            ? 'bg-blue-50 text-blue-700 border border-blue-200'
-                            : res.department === 'Design'
-                            ? 'bg-purple-50 text-purple-700 border border-purple-200'
-                            : res.department === 'Management'
-                            ? 'bg-slate-100 text-slate-700 border border-slate-200'
-                            : 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                        }`}
-                      >
-                        {res.department}
-                      </span>
-                    </td>
+                      <td className="p-4">
+                        <span
+                          className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full font-semibold text-[10px] border ${availBadge.bg}`}
+                        >
+                          <span className={`w-1.5 h-1.5 rounded-full ${availBadge.dot}`} />
+                          {availBadge.label}
+                        </span>
+                      </td>
 
-                    <td className="p-4 text-right">
-                      <input
-                        type="number"
-                        value={res.monthlyCost}
-                        onChange={(e) =>
-                          onUpdateMonthlyCost(res.id, parseFloat(e.target.value) || 0)
-                        }
-                        className="w-28 text-right bg-slate-50 border border-slate-300 rounded-md px-2.5 py-1 font-mono text-xs text-slate-900 font-semibold focus:ring-1 focus:ring-blue-500 focus:bg-white hover:border-slate-400 transition-colors outline-none"
-                      />
-                    </td>
+                      <td className="p-4">
+                        <div className="flex items-center gap-2">
+                          <div className="w-24 bg-slate-100 rounded-full h-2 overflow-hidden">
+                            <div
+                              className={`h-full rounded-full ${
+                                res.capacityAvg > 100
+                                  ? 'bg-rose-500'
+                                  : res.capacityAvg >= 85
+                                  ? 'bg-amber-500'
+                                  : 'bg-emerald-500'
+                              }`}
+                              style={{ width: `${Math.min(res.capacityAvg, 100)}%` }}
+                            />
+                          </div>
+                          <span className="font-mono text-xs font-bold text-slate-700">
+                            {res.capacityAvg}%
+                          </span>
+                        </div>
+                      </td>
 
-                    <td className="p-4 text-center">
-                      <button
-                        onClick={() => onDeleteResource(res.id)}
-                        className="text-slate-400 hover:text-rose-600 transition-colors p-1"
-                        title="Remove resource"
-                      >
-                        <span className="material-symbols-outlined text-[18px]">delete</span>
-                      </button>
-                    </td>
-                  </tr>
-                ))}
+                      <td className="p-4 text-right">
+                        <input
+                          type="number"
+                          value={res.monthlyCost}
+                          onChange={(e) =>
+                            onUpdateMonthlyCost(res.id, parseFloat(e.target.value) || 0)
+                          }
+                          className="w-28 text-right bg-slate-50 border border-slate-300 rounded-md px-2.5 py-1 font-mono text-xs text-slate-900 font-semibold focus:ring-1 focus:ring-blue-500 focus:bg-white transition-colors outline-none"
+                        />
+                      </td>
+
+                      <td className="p-4 text-center">
+                        <button
+                          onClick={() => onDeleteResource(res.id)}
+                          className="text-slate-400 hover:text-rose-600 transition-colors p-1"
+                          title="Remove resource"
+                        >
+                          <span className="material-symbols-outlined text-[18px]">delete</span>
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
         </div>
+      )}
 
-        {/* Right Analytics Cards (4 Cols) */}
-        <div className="col-span-12 xl:col-span-4 flex flex-col gap-4 sm:gap-6">
-          {/* Total Cost Card */}
-          <div className="bg-white border border-slate-200 rounded-xl p-6 relative overflow-hidden shadow-xs">
-            <div className="absolute top-0 right-0 p-4 text-slate-200 pointer-events-none">
-              <span className="material-symbols-outlined text-[64px]">
-                account_balance_wallet
+      {/* TAB 2: CAPACITY & DAILY HEATMAP */}
+      {activeTab === 'heatmap' && (
+        <div className="bg-white border border-slate-200 rounded-xl shadow-xs overflow-hidden flex flex-col">
+          <div className="h-12 border-b border-slate-200 flex flex-wrap items-center justify-between px-4 bg-slate-50/80 shrink-0 gap-2">
+            <h3 className="font-semibold text-xs text-slate-900 flex items-center gap-2">
+              <span className="material-symbols-outlined text-[18px] text-slate-500">
+                calendar_month
               </span>
-            </div>
-            <h4 className="text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-2">
-              Total Monthly Allocation
-            </h4>
-            <div className="text-3xl font-bold text-slate-900">
-              ${totalMonthlyCost.toLocaleString()}
-            </div>
-            <div className="mt-4 flex items-center text-xs">
-              <span className="text-blue-600 font-bold flex items-center bg-blue-50 px-2 py-0.5 rounded border border-blue-100 mr-2">
-                <span className="material-symbols-outlined text-[14px] mr-0.5">
-                  trending_up
-                </span>
-                4.2%
-              </span>
-              <span className="text-slate-500">vs last month</span>
+              Daily Allocation & Capacity Heatmap
+            </h3>
+            <div className="flex items-center gap-3 text-[11px] font-medium text-slate-600">
+              <div className="flex items-center gap-1.5">
+                <div className="w-3 h-3 bg-slate-100 rounded border border-slate-300"></div>
+                <span>Available (&lt;70%)</span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <div className="w-3 h-3 bg-blue-100 rounded border border-blue-300"></div>
+                <span>Optimal (70-90%)</span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <div className="w-3 h-3 bg-rose-100 rounded border border-rose-300"></div>
+                <span className="text-rose-700 font-semibold">Overallocated (&gt;100%)</span>
+              </div>
             </div>
           </div>
 
-          {/* Department Breakdown Card */}
-          <div className="bg-white border border-slate-200 rounded-xl p-6 shadow-xs flex-1">
+          <div className="overflow-x-auto relative">
+            <div className="flex w-max min-w-full">
+              {/* Team Member Column */}
+              <div className="sticky left-0 bg-white z-20 w-64 border-r border-slate-200 flex flex-col shadow-xs">
+                <div className="h-9 border-b border-slate-200 flex items-center px-4 text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+                  Resource Name
+                </div>
+                {filteredResources.map((res) => (
+                  <div
+                    key={res.id}
+                    className="h-12 border-b border-slate-100 flex items-center px-4 hover:bg-slate-50 transition-colors"
+                  >
+                    <div className="flex items-center gap-3 w-full">
+                      <div className="w-7 h-7 rounded-full overflow-hidden shrink-0 border border-slate-200 relative bg-blue-50 text-blue-700 flex items-center justify-center font-bold text-xs">
+                        {res.avatar ? (
+                          <img src={res.avatar} alt={res.name} className="w-full h-full object-cover" />
+                        ) : (
+                          res.initials
+                        )}
+                        {res.capacityAvg > 100 && (
+                          <div className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-rose-500 rounded-full border-2 border-white" />
+                        )}
+                      </div>
+                      <div className="flex flex-col min-w-0">
+                        <span className="text-xs font-semibold text-slate-900 truncate">
+                          {res.name}
+                        </span>
+                        <span className={`text-[10px] font-mono ${res.capacityAvg > 100 ? 'text-rose-600 font-bold' : 'text-slate-500'}`}>
+                          {res.capacityAvg}% Avg Load
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Heatmap Grid */}
+              <div className="flex flex-col flex-1 min-w-[700px]">
+                <div className="h-9 border-b border-slate-200 flex">
+                  {days.map((d) => (
+                    <div
+                      key={d}
+                      className="flex-1 flex items-center justify-center font-mono text-[11px] font-semibold text-slate-500 border-r border-slate-100 bg-slate-50/50"
+                    >
+                      Oct {d < 10 ? `0${d}` : d}
+                    </div>
+                  ))}
+                </div>
+
+                {filteredResources.map((res) => (
+                  <div key={res.id} className="h-12 border-b border-slate-100 flex">
+                    {days.map((d) => {
+                      const cap = res.dailyCapacity?.[d] ?? 0;
+                      const isEditing = editingCell?.resId === res.id && editingCell?.day === d;
+
+                      let cellBg = 'bg-slate-50 border-slate-200/50 text-slate-500';
+                      if (cap === 0) {
+                        cellBg = 'bg-slate-100/40 text-slate-300';
+                      } else if (cap >= 70 && cap <= 100) {
+                        cellBg = 'bg-blue-100 text-blue-800 font-semibold border-blue-200';
+                      } else if (cap > 100) {
+                        cellBg = 'bg-rose-100 text-rose-700 font-bold border-rose-300';
+                      } else {
+                        cellBg = 'bg-emerald-50 text-emerald-800 font-medium border-emerald-200';
+                      }
+
+                      return (
+                        <div key={d} className="flex-1 p-[2px] border-r border-slate-100">
+                          {isEditing ? (
+                            <input
+                              type="number"
+                              autoFocus
+                              value={tempValue}
+                              onChange={(e) => setTempValue(e.target.value)}
+                              onBlur={handleSaveCell}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') handleSaveCell();
+                                if (e.key === 'Escape') setEditingCell(null);
+                              }}
+                              className="w-full h-full bg-white border-2 border-blue-600 text-center font-mono text-xs outline-none rounded"
+                            />
+                          ) : (
+                            <div
+                              onClick={() => handleCellClick(res.id, d, cap)}
+                              className={`w-full h-full rounded-sm flex items-center justify-center font-mono text-[10px] cursor-pointer hover:scale-105 transition-all shadow-2xs border ${cellBg}`}
+                              title={`Oct ${d}: ${cap}% Capacity. Click to edit.`}
+                            >
+                              {cap > 0 ? `${cap}%` : '-'}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* TAB 3: DEPARTMENT & PROJECT DISTRIBUTION */}
+      {activeTab === 'projects' && (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          {/* Dept Breakdown Card */}
+          <div className="bg-white border border-slate-200 rounded-xl p-6 shadow-xs">
             <h4 className="text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-4">
-              Cost by Department
+              Cost & Resource Count by Department
             </h4>
             <div className="space-y-4">
               {Object.entries(deptCosts).map(([dept, deptAmt]) => {
                 const pct = totalMonthlyCost > 0 ? Math.round((deptAmt / totalMonthlyCost) * 100) : 0;
+                const count = resources.filter((r) => r.department === dept).length;
                 return (
                   <div key={dept}>
                     <div className="flex justify-between text-xs mb-1">
-                      <span className="font-semibold text-slate-800">{dept}</span>
+                      <span className="font-semibold text-slate-800">
+                        {dept} ({count} members)
+                      </span>
                       <span className="font-mono text-slate-500 font-semibold">
                         ${deptAmt.toLocaleString()} ({pct}%)
                       </span>
@@ -220,15 +563,55 @@ export const ResourceManagement: React.FC<ResourceManagementProps> = ({
                             : 'bg-emerald-600'
                         }`}
                         style={{ width: `${pct}%` }}
-                      ></div>
+                      />
                     </div>
                   </div>
                 );
               })}
             </div>
           </div>
+
+          {/* Project Workload Distribution */}
+          <div className="bg-white border border-slate-200 rounded-xl p-6 shadow-xs flex flex-col justify-between">
+            <div>
+              <h4 className="text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-4">
+                Active Project Workload Breakdown
+              </h4>
+              <div className="space-y-3">
+                <div className="p-3 border border-slate-200 rounded-lg bg-slate-50/50 flex justify-between items-center">
+                  <div>
+                    <span className="font-bold text-xs text-slate-900 block">Sprint 42 Optimization</span>
+                    <span className="text-[11px] text-slate-500">45% of total team capacity</span>
+                  </div>
+                  <span className="bg-blue-100 text-blue-800 text-[10px] font-bold px-2 py-0.5 rounded">
+                    High Priority
+                  </span>
+                </div>
+
+                <div className="p-3 border border-slate-200 rounded-lg bg-slate-50/50 flex justify-between items-center">
+                  <div>
+                    <span className="font-bold text-xs text-slate-900 block">Database & Platform Migration</span>
+                    <span className="text-[11px] text-slate-500">30% of total team capacity</span>
+                  </div>
+                  <span className="bg-slate-200 text-slate-700 text-[10px] font-bold px-2 py-0.5 rounded">
+                    Active
+                  </span>
+                </div>
+
+                <div className="p-3 border border-slate-200 rounded-lg bg-slate-50/50 flex justify-between items-center">
+                  <div>
+                    <span className="font-bold text-xs text-slate-900 block">Analytics & Reporting Engine</span>
+                    <span className="text-[11px] text-slate-500">25% of total team capacity</span>
+                  </div>
+                  <span className="bg-amber-100 text-amber-800 text-[10px] font-bold px-2 py-0.5 rounded">
+                    Planning
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Add Resource Modal */}
       {showAddModal && (
@@ -238,7 +621,7 @@ export const ResourceManagement: React.FC<ResourceManagementProps> = ({
             className="bg-white border border-slate-200 rounded-xl shadow-xl w-full max-w-md overflow-hidden flex flex-col"
           >
             <div className="flex justify-between items-center p-5 border-b border-slate-200 bg-slate-50">
-              <h3 className="font-bold text-sm text-slate-900">Add New Resource</h3>
+              <h3 className="font-bold text-sm text-slate-900">Add New Team Member</h3>
               <button
                 type="button"
                 onClick={() => setShowAddModal(false)}

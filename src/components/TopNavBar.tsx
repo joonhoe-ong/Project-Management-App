@@ -12,11 +12,10 @@ export const TopNavBar: React.FC<TopNavBarProps> = ({
   onToggleMobile,
   searchQuery,
   onSearchChange,
-  unreadNotificationsCount = 2
+  unreadNotificationsCount: initialUnreadCount = 2
 }) => {
   const [showNotifs, setShowNotifs] = useState(false);
-
-  const notifications = [
+  const [notifications, setNotifications] = useState([
     {
       id: 'n1',
       title: 'Bottleneck Detected',
@@ -38,7 +37,19 @@ export const TopNavBar: React.FC<TopNavBarProps> = ({
       time: '3h ago',
       unread: false
     }
-  ];
+  ]);
+
+  const unreadCount = notifications.filter((n) => n.unread).length;
+
+  const handleMarkAllRead = () => {
+    setNotifications((prev) => prev.map((n) => ({ ...n, unread: false })));
+  };
+
+  const handleNotificationClick = (id: string) => {
+    setNotifications((prev) =>
+      prev.map((n) => (n.id === id ? { ...n, unread: false } : n))
+    );
+  };
 
   return (
     <header className="flex justify-between items-center w-full px-4 md:px-6 h-14 bg-white border-b border-slate-200 z-30 shrink-0 sticky top-0 shadow-xs">
@@ -90,8 +101,8 @@ export const TopNavBar: React.FC<TopNavBarProps> = ({
             title="Notifications"
           >
             <span className="material-symbols-outlined text-[20px]">notifications</span>
-            {unreadNotificationsCount > 0 && (
-              <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-rose-600 rounded-full ring-2 ring-white animate-pulse"></span>
+            {unreadCount > 0 && (
+              <span className="absolute top-1.5 right-1.5 w-2.5 h-2.5 bg-rose-600 rounded-full ring-2 ring-white animate-pulse"></span>
             )}
           </button>
 
@@ -99,21 +110,32 @@ export const TopNavBar: React.FC<TopNavBarProps> = ({
           {showNotifs && (
             <div className="absolute right-0 mt-2 w-80 bg-white border border-slate-200 rounded-xl shadow-lg z-50 p-3 space-y-2">
               <div className="flex justify-between items-center border-b border-slate-100 pb-2">
-                <span className="font-semibold text-xs text-slate-900">Notifications</span>
-                <span className="text-[10px] text-blue-600 font-semibold cursor-pointer hover:underline">
-                  Mark all read
+                <span className="font-semibold text-xs text-slate-900">
+                  Notifications {unreadCount > 0 && `(${unreadCount} unread)`}
                 </span>
+                {unreadCount > 0 && (
+                  <button
+                    onClick={handleMarkAllRead}
+                    className="text-[10px] text-blue-600 font-semibold hover:underline"
+                  >
+                    Mark all read
+                  </button>
+                )}
               </div>
               <div className="space-y-1.5 max-h-64 overflow-y-auto">
                 {notifications.map((n) => (
                   <div
                     key={n.id}
-                    className={`p-2 rounded-lg text-xs transition-colors ${
-                      n.unread ? 'bg-blue-50/70 border border-blue-100' : 'hover:bg-slate-50'
+                    onClick={() => handleNotificationClick(n.id)}
+                    className={`p-2 rounded-lg text-xs cursor-pointer transition-colors ${
+                      n.unread ? 'bg-blue-50/70 border border-blue-100 hover:bg-blue-100/60' : 'hover:bg-slate-50 opacity-80'
                     }`}
                   >
                     <div className="font-semibold text-slate-800 flex justify-between">
-                      <span>{n.title}</span>
+                      <span className="flex items-center gap-1.5">
+                        {n.unread && <span className="w-1.5 h-1.5 bg-blue-600 rounded-full shrink-0" />}
+                        {n.title}
+                      </span>
                       <span className="text-[10px] text-slate-400 font-normal">{n.time}</span>
                     </div>
                     <p className="text-[11px] text-slate-600 mt-0.5 leading-snug">{n.desc}</p>
@@ -123,14 +145,6 @@ export const TopNavBar: React.FC<TopNavBarProps> = ({
             </div>
           )}
         </div>
-
-        <button
-          onClick={() => alert('OptiPlan Pro v2.4 - Optimization Engine Active')}
-          className="p-2 text-slate-600 hover:bg-slate-100 rounded-full transition-colors hidden sm:block"
-          title="Help"
-        >
-          <span className="material-symbols-outlined text-[20px]">help</span>
-        </button>
 
         <button
           onClick={() => alert('Global Preferences & Optimization Rules')}
