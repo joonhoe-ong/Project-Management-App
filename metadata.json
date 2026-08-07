@@ -1,0 +1,6 @@
+{
+  "name": "OptiPlan Pro",
+  "description": "Project optimization, Gantt chart, task board, resource allocation, and team workload management platform.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
